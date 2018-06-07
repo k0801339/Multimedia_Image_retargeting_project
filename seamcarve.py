@@ -46,7 +46,7 @@ def cumulative_energies_vertical(energy, protected, mask):
     '''
     # for protected: make mask part's energy very high
     if protected:
-        energy[mask>0] += 1000
+        energy[mask>0] += 10000
     
     for i in range(1, height):
         for j in range(width):
@@ -67,7 +67,7 @@ def cumulative_energies_horizontal(energy, protected, mask):
     '''
     # for protected: make mask part's energy very high
     if protected:
-        energy[mask>0] += 1000
+        energy[mask>0] += 10000
     
     for j in range(1, width):
         for i in range(height):
@@ -162,7 +162,7 @@ def remove_horizontal_mask(img, seam):
     for x, y in reversed(seam):
         removed[0:y, x] = img[0:y, x]
         removed[y:height - 1, x] = img[y + 1:height, x]
-
+        
     return removed
 # Extra add
 def remove_vertical_mask(img, seam):
@@ -173,7 +173,8 @@ def remove_vertical_mask(img, seam):
     for x, y in reversed(seam):
         removed[y, 0:x] = img[y, 0:x]
         removed[y, x:width - 1] = img[y, x + 1:width]
-
+        #removed[y, :] = np.delete(img[y,:], [x])
+        
     return removed
 
 # Extra add
@@ -189,7 +190,7 @@ def insert_horizontal_seam(img, seam):
                 output[y+2:, x, c] = img[y+1: , x, c]
             else:
                 new = np.average(img[y-1:y+1, x, c])
-                output[:y, x, c] = img[:y, x, c]
+                output[0:y, x, c] = img[0:y, x, c]
                 output[y, x, c] = new
                 output[y+1: , x, c] = img[y: , x, c]
     return output
@@ -207,7 +208,7 @@ def insert_vertical_seam(img, seam):
                 output[y, x+2:, c] = img[y, x+1: , c]
             else:
                 new = np.average(img[y, x-1:x+1, c])
-                output[y, :x, c] = img[y, :x, c]
+                output[y, 0:x, c] = img[y, 0:x, c]
                 output[y, x, c] = new
                 output[y, x+1: , c] = img[y, x: , c]
     return output
@@ -218,7 +219,7 @@ def seam_update_horizontal(seam_list, cur_seam):
     for seam in seam_list:
         for x, y in reversed(cur_seam):
             if seam[x][1] >= y:
-                seam[x][1] += 2
+                seam[x][1] += 1
 
         output.append(seam)
     return output
@@ -229,7 +230,7 @@ def seam_update_vertical(seam_list, cur_seam):
     for seam in seam_list:
         for x, y in reversed(cur_seam):
             if seam[y][0] >= x:
-                seam[y][0] += 2
+                seam[y][0] += 1
 
         output.append(seam)
     return output
@@ -255,17 +256,37 @@ def window_callback(event, x, y, flags, param):
 def window_callback2(event, x, y, flags, param):
     
     global protected_top_x, protected_top_y, protected_bottom_x, protected_bottom_y
-    
-    if event == cv2.EVENT_LBUTTONDOWN:
-        protected_top_x, protected_top_y = x, y
-        protected_bottom_x = -1
-        protected_bottom_y = -1
-        #print ('Clicked {} x {}.'.format(mx, my))
-    if event == cv2.EVENT_LBUTTONUP:
-        protected_bottom_x, protected_bottom_y = x, y
-        print('Now choose (%d, %d) to (%d, %d) as mask' %(protected_top_x, protected_top_y, protected_bottom_x, protected_bottom_y))
-        print('If OK, then press ''Y'' to proceed')
-        print('If give up selecting protected mask, then press ''N''')
+    global mask
+    global select_end
+    global press
+
+    height, width = param.shape[:2]
+    if select_end:
+        if event == cv2.EVENT_LBUTTONDOWN:
+            protected_top_x, protected_top_y = x, y
+            protected_bottom_x = x
+            protected_bottom_y = y
+            cv2.putText(param, '('+str(protected_top_x)+', '+str(protected_top_y)+')',(x, y), \
+                        cv2.FONT_HERSHEY_COMPLEX, 0.5, (0,0,255), 1)
+            press = True
+            #print ('Clicked {} x {}.'.format(mx, my))
+        elif event == cv2.EVENT_MOUSEMOVE and flags==cv2.EVENT_FLAG_LBUTTON:
+            protected_bottom_x, protected_bottom_y = x, y
+        
+        elif event == cv2.EVENT_LBUTTONUP:
+            protected_bottom_x, protected_bottom_y = x, y
+            press = False
+            cv2.putText(param, '('+str(protected_bottom_x)+', '+str(protected_bottom_y)+')',(x,y), \
+                        cv2.FONT_HERSHEY_COMPLEX, 0.5, (0,0,255), 1)
+            cv2.rectangle(param, (protected_top_x, protected_top_y), (x, y), (255,0,0), 2)
+            
+            print('Now choose (%d, %d) to (%d, %d) as mask' %(protected_top_x, protected_top_y, protected_bottom_x, protected_bottom_y))
+            print('If OK, then press ''Y'' to proceed')
+            print('Forgive the protected mask, please press ''N''')
+            print('Or keep selecting')
+            
+            if protected_top_x >= 0 and protected_top_y >=0 and protected_bottom_x<width and protected_bottom_y<height:
+                mask[protected_top_x-1:protected_bottom_x, protected_top_y-1:protected_bottom_y] = 1
 
 def resize(img, width=None, height=None, interactive=False):
     result = np.copy(img)
@@ -273,11 +294,22 @@ def resize(img, width=None, height=None, interactive=False):
     img_height, img_width = img.shape[:2]
     
     protected = False
+    # create mask: 1 for object, 0 for none
+    
+    global mask
+    mask = np.zeros((img_height, img_width))
 
     if interactive:
         global mx, my
         mx, my = img_width, img_height
         global protected_top_x, protected_top_y, protected_bottom_x, protected_bottom_y
+        
+        global select_end
+        select_end = False
+        
+        global press
+        press = False
+        
         protected_top_x=-1 
         protected_top_y=-1
         protected_bottom_x=-1
@@ -290,16 +322,30 @@ def resize(img, width=None, height=None, interactive=False):
         # waitKey(0) -> wait until pressing any key
         # in this case, user can select any position as prefered cutsize and press key if it's OK
         cv2.waitKey(0)
+        select_end = True
         # choose proected mask or not
         print('Now select protected mask. If not, press ''N'' to proceed')
-        cv2.setMouseCallback('seam', window_callback2, img)
-        cv2.imshow('seam', result)
+        
+        temp = np.copy(img)
+        
+        cv2.setMouseCallback('seam', window_callback2, result)
+        cv2.imshow('seam', temp)
+        
         while True:
-            result = np.copy(img)
+            temp = np.copy(result)
+            '''
             if protected_bottom_x!=-1:
-                cv2.rectangle(result, (protected_top_x,protected_top_y), (protected_bottom_x,protected_bottom_y), (255,0,0), 2);
+                cv2.rectangle(result, (protected_top_x,protected_top_y), (protected_bottom_x,protected_bottom_y), (255,0,0), 2)
                 cv2.imshow('seam', result)
+            '''
+            #cv2.imshow('seam', result)
+            if press:
+                cv2.rectangle(temp, (protected_top_x,protected_top_y), (protected_bottom_x,protected_bottom_y), (255,0,0), 2)
+                cv2.putText(temp, '('+str(protected_bottom_x)+', '+str(protected_bottom_y)+')', (protected_bottom_x,protected_bottom_y), \
+                            cv2.FONT_HERSHEY_COMPLEX, 0.5, (0,0,255), 1)
+                cv2.imshow('seam', temp)
                 
+            
             key = cv2.waitKey(10)
             if key == ord('n'):
                 protected_top_x = -1
@@ -308,19 +354,19 @@ def resize(img, width=None, height=None, interactive=False):
             elif key == ord('y'):
                 protected = True
                 break
-
+            
+        
         print ('Resizing to {} (width) x {} (height).'.format(mx, my))
+        '''
         if key != 'N':
             print ('Protected mask position: ({}*{}) - ({}*{})'.format(protected_top_x, protected_top_y, protected_bottom_x, protected_bottom_y))
-
-    
+        '''
+    select_end = False
     result = img
-    # create mask: 1 for object, 0 for none
-    
-    mask = np.zeros((img_height, img_width))
+    '''
     if protected == True:
         mask[protected_top_x-1:protected_bottom_x, protected_top_y-1:protected_bottom_y] = 1
-    
+    '''
     if interactive:
         cv2.imshow('seam', result)
     
@@ -329,9 +375,11 @@ def resize(img, width=None, height=None, interactive=False):
 
     if width is None:
         width = mx
-    # now only support 'downsampling'
-    #dy = img_height - height if img_height - height > 0 else 0
-    # dx = img_width - width if img_width - width > 0 else 0
+    
+    # count the time
+    logging.info("Processing image")
+    start_time = datetime.now()
+    
     dy = img_height - height
     dx = img_width - width
     # first remove the horizontal seam
@@ -346,24 +394,28 @@ def resize(img, width=None, height=None, interactive=False):
     # enlarge the image
     else:
         dy *= -1
-        tmp_img = img
+        tmp_img = np.copy(result)
+        #tmp_img2 = np.zeros(result.shape)
         delete_seam = []
         
         for i in range(dy):
-            energies = cumulative_energies_horizontal(energy(result), protected, mask)
+            energies = cumulative_energies_horizontal(energy(result), False, mask)
             seam = horizontal_seam(energies)
             delete_seam.append(seam)
             result = remove_horizontal_seam(result, seam)
-            mask = remove_horizontal_mask(mask, seam)
+            #mask = remove_horizontal_mask(mask, seam)
             
         result = tmp_img
         num_row = len(delete_seam)
+        #tmp_img2 = np.copy(result)
         for n in range(num_row):
             seam = delete_seam.pop(0)
             result = insert_horizontal_seam(result, seam)
+            tmp_img = np.copy(result)
             if interactive:
-                draw_seam(result, seam, interactive=interactive)
+                draw_seam(tmp_img, seam, interactive=interactive)
             delete_seam = seam_update_horizontal(delete_seam, seam)
+        #result = np.copy(tmp_img)
     
     # then remove the vertical seam
     if dx >= 0:
@@ -377,34 +429,43 @@ def resize(img, width=None, height=None, interactive=False):
     else:
         dx *= -1
         tmp_img = np.copy(result)
+        #tmp_img2 = np.zeros(result.shape)
         delete_seam = []
         
         for i in range(dx):
-            energies = cumulative_energies_vertical(energy(result), protected, mask)
+            energies = cumulative_energies_vertical(energy(result), False, mask)
             seam = vertical_seam(energies)
             delete_seam.append(seam)
             result = remove_vertical_seam(result, seam)
-            mask = remove_vertical_mask(mask, seam)
+            #mask = remove_vertical_mask(mask, seam)
         
         result = tmp_img
         num_col = len(delete_seam)
         for n in range(num_col):
             seam = delete_seam.pop(0)
             result = insert_vertical_seam(result, seam)
+            tmp_img = np.copy(result)
             if interactive:
-                draw_seam(result, seam, interactive=interactive)
+                draw_seam(tmp_img, seam, interactive=interactive)
             delete_seam = seam_update_vertical(delete_seam, seam)
-        
+            
+        #result = np.copy(tmp_img)
+    
     # give output image name
     name = sys.argv[1][:-3] + '_result.jpg'
     cv2.imwrite(name, result)
     # show the computing time
     logging.info("Processing took %f sec" % ((datetime.now() - start_time).total_seconds()))
     
-    print ('Press any key to close the window.')
+    print ('Press ''N'' to close the window.')
 
     cv2.imshow('seam', result)
-    cv2.waitKey(0)
+    while(True):
+        key = cv2.waitKey(10)
+        if key == ord('n'):
+            break;
+    
+    
     cv2.destroyAllWindows()
 
 def usage(program_name):
@@ -421,9 +482,9 @@ def usage(program_name):
 
 if __name__ == '__main__':
     img = cv2.imread(sys.argv[1])
-    # count the time
-    logging.info("Processing image")
-    start_time = datetime.now()
+    
+    cv2.setUseOptimized(True)
+    
     # provide interactive way to user
     if len(sys.argv) == 3 and sys.argv[2] == '--interactive':
         resize(img, interactive=True)
