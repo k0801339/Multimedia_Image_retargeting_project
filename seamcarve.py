@@ -46,7 +46,7 @@ def cumulative_energies_vertical(energy, protected, mask):
     '''
     # for protected: make mask part's energy very high
     if protected:
-        energy[mask>0] += 10000
+        energy[mask>0] *= 1000
     
     for i in range(1, height):
         for j in range(width):
@@ -67,7 +67,7 @@ def cumulative_energies_horizontal(energy, protected, mask):
     '''
     # for protected: make mask part's energy very high
     if protected:
-        energy[mask>0] += 10000
+        energy[mask>0] *= 1000
     
     for j in range(1, width):
         for i in range(height):
@@ -136,6 +136,7 @@ def remove_horizontal_seam(img, seam):
     # as the output after remove min horizontal seam -> new height -= 1 
     removed = np.zeros((height - 1, width, bands), np.uint8)
     # originally seam's index starts from last column, so read the reverse sequence
+    #print('remove: %d %d' %(height, width))
     for x, y in reversed(seam):
         removed[0:y, x] = img[0:y, x]
         removed[y:height - 1, x] = img[y + 1:height, x]
@@ -159,6 +160,7 @@ def remove_horizontal_mask(img, seam):
     # as the output after remove min horizontal seam -> new height -= 1 
     removed = np.zeros((height - 1, width), np.uint8)
     # originally seam's index starts from last column, so read the reverse sequence
+    
     for x, y in reversed(seam):
         removed[0:y, x] = img[0:y, x]
         removed[y:height - 1, x] = img[y + 1:height, x]
@@ -211,6 +213,38 @@ def insert_vertical_seam(img, seam):
                 output[y, 0:x, c] = img[y, 0:x, c]
                 output[y, x, c] = new
                 output[y, x+1: , c] = img[y, x: , c]
+    return output
+# Extra ass
+def insert_horizontal_mask(img, seam):
+    height, width = img.shape[:2]
+    output = np.zeros((height+1, width))
+    for x, y in reversed(seam):
+        if y==0:
+            new = np.average(img[y:y+2, x])
+            output[y, x] = img[y, x]
+            output[y+1, x] = new
+            output[y+2:, x] = img[y+1: , x]
+        else:
+            new = np.average(img[y-1:y+1, x])
+            output[0:y, x] = img[0:y, x]
+            output[y, x] = new
+            output[y+1: , x] = img[y: , x]
+    return output
+# Extra add
+def insert_vertical_mask(img, seam):
+    height, width = img.shape[:2]
+    output = np.zeros((height, width+1))
+    for x, y in reversed(seam):
+        if x==0:
+            new = np.average(img[y, x:x+2])
+            output[y, x] = img[y, x]
+            output[y, x+1] = new
+            output[y, x+2:] = img[y, x+1:]
+        else:
+            new = np.average(img[y, x-1:x+1])
+            output[y, 0:x] = img[y, 0:x]
+            output[y, x] = new
+            output[y, x+1:] = img[y, x:]
     return output
 
 # Extra add
@@ -386,7 +420,10 @@ def resize(img, width=None, height=None, interactive=False):
     if dy >= 0:
         for i in range(dy):
             energies = cumulative_energies_horizontal(energy(result), protected, mask)
+            #print('Result: %d %d' %(result.shape[0], result.shape[1]))
+            #print('Mask: %d %d' %(mask.shape[0], mask.shape[1]))
             seam = horizontal_seam(energies)
+            #print('Seam: %d %d' %(seam[0][0], seam[0][1]))
             if interactive:
                 draw_seam(result, seam, interactive=interactive)
             result = remove_horizontal_seam(result, seam)
@@ -395,17 +432,22 @@ def resize(img, width=None, height=None, interactive=False):
     else:
         dy *= -1
         tmp_img = np.copy(result)
+        tmp_mask = np.copy(mask)
         #tmp_img2 = np.zeros(result.shape)
         delete_seam = []
         
         for i in range(dy):
-            energies = cumulative_energies_horizontal(energy(result), False, mask)
+            energies = cumulative_energies_horizontal(energy(result), protected, mask)
+            #print('Result: %d %d' %(result.shape[0], result.shape[1]))
+            #print('Mask: %d %d' %(mask.shape[0], mask.shape[1]))
             seam = horizontal_seam(energies)
+            #print('Seam: %d %d' %(seam[0][0], seam[0][1]))
             delete_seam.append(seam)
             result = remove_horizontal_seam(result, seam)
-            #mask = remove_horizontal_mask(mask, seam)
+            mask = remove_horizontal_mask(mask, seam)
             
         result = tmp_img
+        mask = tmp_mask
         num_row = len(delete_seam)
         #tmp_img2 = np.copy(result)
         for n in range(num_row):
@@ -415,6 +457,7 @@ def resize(img, width=None, height=None, interactive=False):
             if interactive:
                 draw_seam(tmp_img, seam, interactive=interactive)
             delete_seam = seam_update_horizontal(delete_seam, seam)
+            mask = insert_horizontal_mask(mask, seam)
         #result = np.copy(tmp_img)
     
     # then remove the vertical seam
@@ -429,17 +472,19 @@ def resize(img, width=None, height=None, interactive=False):
     else:
         dx *= -1
         tmp_img = np.copy(result)
+        tmp_mask = np.copy(mask)
         #tmp_img2 = np.zeros(result.shape)
         delete_seam = []
         
         for i in range(dx):
-            energies = cumulative_energies_vertical(energy(result), False, mask)
+            energies = cumulative_energies_vertical(energy(result), protected, mask)
             seam = vertical_seam(energies)
             delete_seam.append(seam)
             result = remove_vertical_seam(result, seam)
-            #mask = remove_vertical_mask(mask, seam)
+            mask = remove_vertical_mask(mask, seam)
         
         result = tmp_img
+        #mask = tmp_mask
         num_col = len(delete_seam)
         for n in range(num_col):
             seam = delete_seam.pop(0)
@@ -448,7 +493,7 @@ def resize(img, width=None, height=None, interactive=False):
             if interactive:
                 draw_seam(tmp_img, seam, interactive=interactive)
             delete_seam = seam_update_vertical(delete_seam, seam)
-            
+            #mask = insert_vertical_mask(mask, seam)
         #result = np.copy(tmp_img)
     
     # give output image name
