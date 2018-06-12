@@ -428,6 +428,7 @@ def resize(img, width=None, height=None, interactive=False):
                 draw_seam(result, seam, interactive=interactive)
             result = remove_horizontal_seam(result, seam)
             mask = remove_horizontal_mask(mask, seam)
+        logging.info("算完horizontal carve")
     # enlarge the image
     else:
         dy *= -1
