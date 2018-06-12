@@ -278,14 +278,17 @@ def window_callback(event, x, y, flags, param):
             then release the left button, monitor will show the new size
     """
     global mx, my
+    global press
     
     if event == cv2.EVENT_LBUTTONDOWN:
         mx, my = x, y
+        press = False
         #print ('Clicked {} x {}.'.format(mx, my))
     if event == cv2.EVENT_LBUTTONUP:
         mx, my = abs(x - mx), abs(y - my)
         print('Now choose %d * %d as new size' %(mx, my))
-        print('If OK, then press any key to proceed')
+        print('If OK, then press Y to proceed')
+        press = True
 
 def window_callback2(event, x, y, flags, param):
     
@@ -349,14 +352,27 @@ def resize(img, width=None, height=None, interactive=False):
         protected_bottom_x=-1
         protected_bottom_y=-1
         
+        temp = np.copy(img)
+        
         cv2.namedWindow('seam', cv2.WINDOW_AUTOSIZE)
         # set custom mouse event: (name, func it call when mouse event appears, param passed to func)
-        cv2.setMouseCallback('seam', window_callback, img)
-        cv2.imshow('seam', result)
+        cv2.setMouseCallback('seam', window_callback, result)
+        cv2.imshow('seam', temp)
         # waitKey(0) -> wait until pressing any key
         # in this case, user can select any position as prefered cutsize and press key if it's OK
-        cv2.waitKey(0)
+        while True:
+            temp = np.copy(img)
+            if press:
+                cv2.putText(temp, 'New Size: ('+str(mx)+', '+str(my)+')', (img_width//3, img_height//2), \
+                            cv2.FONT_HERSHEY_COMPLEX, 1, (0,0, 255), 2)
+                cv2.imshow('seam', temp)
+                
+            key = cv2.waitKey(10)
+            if key == ord('y'):
+                break;
+            
         select_end = True
+        press = False
         # choose proected mask or not
         print('Now select protected mask. If not, press ''N'' to proceed')
         
@@ -428,7 +444,7 @@ def resize(img, width=None, height=None, interactive=False):
                 draw_seam(result, seam, interactive=interactive)
             result = remove_horizontal_seam(result, seam)
             mask = remove_horizontal_mask(mask, seam)
-        logging.info("算完horizontal carve")
+        #logging.info("算完horizontal carve")
     # enlarge the image
     else:
         dy *= -1
