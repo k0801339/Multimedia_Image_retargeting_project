@@ -23,6 +23,7 @@ def x_gradient(img):
     return cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=3, scale=1, delta=0, borderType=cv2.BORDER_DEFAULT)
 
 
+
 def y_gradient(img):
     return cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=3,
                      scale=1, delta=0, borderType=cv2.BORDER_DEFAULT)
